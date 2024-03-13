@@ -1,1 +1,1 @@
-reset && gcc number.c -std=c2x -lm && ./a.exe
+reset && gcc number.c -Wall -std=c2x -lm && ./a.exe
