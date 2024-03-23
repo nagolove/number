@@ -20,7 +20,7 @@ struct Number num_init(uint64_t x) {
         n.nums[n.nums_num++] = x % 100;
         assert(n.nums_num < NUM_MAX);
         x /= 100;
-    }
+    }   
     return n;
 }
 
@@ -48,7 +48,7 @@ struct Number num_inits(const char *s) {
 }
 
 size_t num_prints(struct Number n, char *buf, size_t maxchars) {
-    printf("num_prints: maxchars %zu\n", maxchars);
+    printf("num_prints: n.nums_num %zu, maxchars %zu\n", n.nums_num, maxchars);
 
     // писать символы справа на лево
     assert(buf);
@@ -59,40 +59,43 @@ size_t num_prints(struct Number n, char *buf, size_t maxchars) {
 
     if (!maxchars)
         return 0;
+        
+    printf("n.nums[0] = %d\n", (int)n.nums[0]);
 
     // printf("num_prints: n.num_num %zu\n", n.nums_num);
-    if (!n.nums_num) {        
+    if (!n.nums_num || (n.nums_num == 1 && n.nums[0] == 0)) {
+        printf("zero\n");
         *buf++ = '0';
         *buf = 0;
         return 1;
     }
 
     for (int i = n.nums_num - 1; i >= 0; i--) {
-        printf("n.nums[%d] = %d\n", i, n.nums[i]);
+        // printf("n.nums[%d] = %d\n", i, n.nums[i]);
 
         int hi = n.nums[i] / 10, lo = n.nums[i] % 10;
 
-        printf("hi %d, lo %d\n", hi, lo);
+        // printf("hi %d, lo %d\n", hi, lo);
 
         // if (hi)
             *ptmp++ = hi + '0', written++;
 
         if (written >= maxchars) {
-            printf("written >= maxchars 1\n");
+            // printf("written >= maxchars 1\n");
             return written;
         }
 
         *ptmp++ = lo + '0', written++;
 
         if (written >= maxchars) {
-            printf("written >= maxchars 2\n");
+            // printf("written >= maxchars 2\n");
             return written;
         }
     }
 
     ptmp = tmp;
 
-    printf("num_prints: tmp '%s'\n", tmp);
+    // printf("num_prints: tmp '%s'\n", tmp);
     // /*
     while (*ptmp + 1) {
         if (*ptmp == '0') {
@@ -103,13 +106,19 @@ size_t num_prints(struct Number n, char *buf, size_t maxchars) {
             break;        
     }
     // */
-    printf("num_prints: ptmp '%s'\n", ptmp);
+    // printf("num_prints: ptmp '%s'\n", ptmp);
 
     //memmove();
     strcpy(buf, ptmp);
 
     printf("num_prints: buf after removing leading zeros '%s'\n", buf);
     return written;
+}
+
+char *num_sprint(struct Number n) {
+    static char buf[NUM_MAX];
+    num_prints(n, buf, NUM_MAX);
+    return buf;
 }
 
 struct Number num_add(struct Number a, struct Number b) {
@@ -143,7 +152,14 @@ struct Number num_digit_set(struct Number n, int num, int digit) {
     if (num >= n.nums_num) {
         abort();
     }
-    int *digit = &n.nums[num / 2];
+    uint8_t *_digit = &n.nums[num / 2];
+    if (num % 2) {
+        // lo
+        *_digit = *_digit + *_digit / 10;
+    } else {
+        // hi
+        *_digit = *_digit * 10 + digit / 10;
+    }
     return n;
 }
 
@@ -179,6 +195,13 @@ void test_init() {
 
 }
 
+void check_str(const char *val, const char *should_be) {
+    if (strcmp(val, should_be)) {
+        printf("check_str: fail val '%s', should_be '%s'\n", val, should_be);
+        abort();
+    }
+}
+
 void test_print() {
     Number  nums[] = { 
         num_init(0),            // 0
@@ -194,29 +217,28 @@ void test_print() {
     char buf[256] = {};
 
     num_prints(nums[0], buf, sizeof(buf));    
-    assert(strcmp(buf, "0") == 0);
+    check_str(buf, "0");
 
     num_prints(nums[1], buf, sizeof(buf));
-    assert(strcmp(buf, "1") == 0);
+    check_str(buf, "1");
 
     num_prints(nums[2], buf, sizeof(buf));
-    assert(strcmp(buf, "2") == 0);
+    check_str(buf, "2");
 
     num_prints(nums[3], buf, sizeof(buf));    
-    printf("buf '%s'\n", buf);
-    assert(strcmp(buf, "1010322") == 0);
+    check_str(buf, "1010322");
 
     num_prints(nums[4], buf, sizeof(buf));
-    assert(strcmp(buf, "10103220") == 0);
+    check_str(buf, "10103220");
 
     num_prints(nums[5], buf, sizeof(buf));
-    assert(strcmp(buf, "0") == 0);
+    check_str(buf, "0");
 
-    num_prints(nums[5], buf, sizeof(buf));
-    assert(strcmp(buf, "1") == 0);
+    num_prints(nums[6], buf, sizeof(buf));
+    check_str(buf, "1");
 
-    num_prints(nums[5], buf, sizeof(buf));
-    assert(strcmp(buf, "123456789") == 0);
+    num_prints(nums[7], buf, sizeof(buf));
+    check_str(buf, "123456789");
 }
 
 // a > b    => 1
@@ -292,7 +314,7 @@ void test_digit_set() {
 
 int main() {
     test_init();
-    // test_print();
+    test_print();
     // test_cmp();
 
     // test_add();
@@ -307,14 +329,11 @@ int main() {
     // printf("%d\n", 2 / 2);
     // printf("%d\n", 3 / 2);
     // printf("%d\n", 4 / 2);
-    printf("%d\n", 1 % 2);
-    return 0;
-
-    Number x = num_inits("7778889");
-
-    char buf[128] = {};
-    num_prints(x, buf, sizeof(buf));
-    printf("buf '%s'\n", buf);
+ 
+    Number x = num_inits("7778889"); 
+    printf("x '%s'\n", num_sprint(x));
+    Number y = num_digit_set(x, 0, 1);
+    printf("y '%s'\n", num_sprint(y));
 
     return 0;
 }
