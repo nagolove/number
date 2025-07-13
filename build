@@ -1,1 +1,3 @@
-reset && gcc number.c -Wall -std=c2x -lm && ./a.exe
+reset && gcc -o a.exe number.c -Wall -std=c2x -lm && ./a.exe
+
+gcc -O0 -S sret.c -o sret.s -masm=intel
