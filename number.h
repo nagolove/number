@@ -1,3 +1,11 @@
+/*
+Библиотека длинной арифметики. 
+Число хранится в 100ричной системе счисления.
+для удобного извлечения десятичной цифры.
+
+TODO: Умножение Карацубы
+ */
+
 #pragma once
 
 #include <assert.h>
@@ -11,11 +19,21 @@
 #define NUMBER_MAX 256
 
 typedef struct Number {
-    uint8_t     nums[NUMBER_MAX]; // 100ричная система
+    // 100ричная система для быстрого сдвига и извлечения числа
+    uint8_t     nums[NUMBER_MAX]; 
     size_t      nums_num;
 } Number;
 
-static inline Number num_init(uint64_t x) {
+/*
+typedef struct NumberRat {
+    // NumberRat = p / q
+    Number  p, q;
+    // наличие ошибки округления
+    bool    exact;
+} NumberRat;
+*/
+
+static inline Number num_new(uint64_t x) {
     Number n = {};
     while (x) {
         // printf("%d\n", x % 100);
@@ -26,8 +44,8 @@ static inline Number num_init(uint64_t x) {
     return n;
 }
 
-// только числа >= 0
-static inline Number num_inits(const char *s) {
+// только числа >= 0, знак нуля не поддеживается
+static inline Number num_new_str(const char *s) {
     assert(s);
     Number n = {};
     const char *last = s;
@@ -49,6 +67,16 @@ static inline Number num_inits(const char *s) {
     return n;
 }
 
+// создание числа из сырых данных.
+// XXX: Какова максимальная длина len?
+// XXX: Где находится старший и младший разряд?
+static inline Number num_new_raw(const uint8_t *data, size_t len) {
+    Number n = {};
+    return n;
+}
+
+// распечатать число в буфер buf, максимальное количество символов - maxchars
+// XXX: Каково максимальное количество символов для NUMBER_MAX?
 size_t num_prints(Number n, char *buf, size_t maxchars) {
     printf("num_prints: n.nums_num %zu, maxchars %zu\n", n.nums_num, maxchars);
 
@@ -118,6 +146,7 @@ size_t num_prints(Number n, char *buf, size_t maxchars) {
 }
 
 char *num_sprint(Number n) {
+    // TODO: Добавить слоты
     static char buf[NUMBER_MAX];
     num_prints(n, buf, NUMBER_MAX);
     return buf;
@@ -147,7 +176,7 @@ int num_digit_get(Number n, int num) {
         return digit % 10;
 }
 
-// Если цифра num выходит за границы цисла, то вызывается исключительная ситуация.
+// XXX: Как сделать обработку если цифра num выходит за границы цисла?
 static inline Number num_digit_set(Number n, int num, int digit) {
     assert(digit >= 0);
     assert(digit <= 10);
@@ -162,84 +191,6 @@ static inline Number num_digit_set(Number n, int num, int digit) {
         *_digit = *_digit * 10 + digit / 10;
     }
     return n;
-}
-
-void test_init() {   
-    Number nums[] = {
-        num_init(0),
-        num_init(1),        
-        num_init(10),
-        num_init(99),
-        num_init(100),
-        num_init(101),
-    };
-
-    assert(nums[0].nums_num == 0);
-    assert(nums[0].nums[0] == 0);
-
-    assert(nums[1].nums_num == 1);
-    assert(nums[1].nums[0] == 1);
-
-    assert(nums[2].nums_num == 1);
-    assert(nums[2].nums[0] == 10);
-
-    assert(nums[3].nums_num == 1);
-    assert(nums[3].nums[0] == 99);
-
-    assert(nums[4].nums_num == 2);
-    assert(nums[4].nums[0] == 0);
-    assert(nums[4].nums[1] == 1);
-
-    assert(nums[5].nums_num == 2);
-    assert(nums[5].nums[0] == 1);
-    assert(nums[5].nums[1] == 1);
-
-}
-
-void check_str(const char *val, const char *should_be) {
-    if (strcmp(val, should_be)) {
-        printf("check_str: fail val '%s', should_be '%s'\n", val, should_be);
-        abort();
-    }
-}
-
-void test_print() {
-    Number  nums[] = { 
-        num_init(0),            // 0
-        num_init(1),            // 1
-        num_init(2),            // 2
-        num_init(1010322),      // 3
-        num_init(10103220),     // 4
-        num_inits("0"),         // 5
-        num_inits("1"),         // 6
-        num_inits("123456789"), // 7
-    };
-
-    char buf[256] = {};
-
-    num_prints(nums[0], buf, sizeof(buf));    
-    check_str(buf, "0");
-
-    num_prints(nums[1], buf, sizeof(buf));
-    check_str(buf, "1");
-
-    num_prints(nums[2], buf, sizeof(buf));
-    check_str(buf, "2");
-
-    num_prints(nums[3], buf, sizeof(buf));    
-    check_str(buf, "1010322");
-
-    num_prints(nums[4], buf, sizeof(buf));
-    check_str(buf, "10103220");
-
-    num_prints(nums[5], buf, sizeof(buf));
-    check_str(buf, "0");
-
-    num_prints(nums[6], buf, sizeof(buf));
-    check_str(buf, "1");
-
-    num_prints(nums[7], buf, sizeof(buf));
-    check_str(buf, "123456789");
 }
 
 // a > b    => 1
@@ -258,4 +209,20 @@ int num_cmp(Number a, Number b) {
 
 bool num_eq(Number a, Number b) {
     return !num_cmp(a, b);
+}
+
+static inline Number num_mul_simple(Number a, Number b) {
+    return (Number){};
+}
+
+static inline Number num_mul_karatsuba(Number a, Number b) {
+    return (Number){};
+}
+
+static inline Number num_mul(Number a, Number b) {
+    if (a.nums_num < 32 || b.nums_num < 32)
+        return num_mul_simple(a, b);
+    else
+        return num_mul_karatsuba(a, b);
+    //return (Number){};
 }
