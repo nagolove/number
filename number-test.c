@@ -1,5 +1,6 @@
 #include "number.h"
 
+// проверка базовой инициализации из uint64_t
 void test_init() {   
     Number nums[] = {
         num_new(0),
@@ -39,12 +40,15 @@ void check_str(const char *val, const char *should_be) {
     }
 }
 
+// проверка корректности сериализации в строку
 void test_print() {
     Number  nums[] = { 
         num_new(0),            // 0
         num_new(1),            // 1
         num_new(2),            // 2
+        // проверка на магических числах
         num_new(1010322),      // 3
+        // проверка на магических числах
         num_new(10103220),     // 4
         num_new_str("0"),         // 5
         num_new_str("1"),         // 6
@@ -78,6 +82,11 @@ void test_print() {
     check_str(buf, "123456789");
 }
 
+// сравнение a == b, a < b, a > b
+// XXX: не проверяет крайние случаи
+//Например:
+//сравнение двух чисел с одинаковыми цифрами но разной длиной (01 vs 1)
+//сравнение чисел с ведущими нулями (если такие допускаются)
 void test_cmp() {
     Number  a = num_new(0),
             b = num_new(1),
@@ -104,17 +113,19 @@ void test_cmp() {
     assert(num_cmp(d, c) == -1);
 }
 
+// сумма чисел, от простых до больших
 void test_add() {
-    assert(num_eq(num_add(num_new(900), num_new(100)), num_new_str("1000")) == 0);
-    assert(num_eq(num_add(num_new(100), num_new(900)), num_new_str("1000")) == 0);
+    assert(num_cmp(num_add(num_new(900), num_new(100)), num_new_str("1000")) == 0);
+    assert(num_cmp(num_add(num_new(100), num_new(900)), num_new_str("1000")) == 0);
 
-    assert(num_eq(num_add(num_new(1), num_new(2)), num_new_str("3")) == 0);
-    assert(num_eq(num_add(num_new(10), num_new(90)), num_new_str("100")) == 0);
-    assert(num_eq(num_add(num_new(100), num_new(912)), num_new_str("1012")) == 0);
+    assert(num_cmp(num_add(num_new(1), num_new(2)), num_new_str("3")) == 0);
+    assert(num_cmp(num_add(num_new(10), num_new(90)), num_new_str("100")) == 0);
+    assert(num_cmp(num_add(num_new(100), num_new(912)), num_new_str("1012")) == 0);
 
-    assert(num_eq(num_add(num_new(12345), num_new(77777)), num_new_str("90122")) == 0);
+    assert(num_cmp(num_add(num_new(12345), num_new(77777)), num_new_str("90122")) == 0);
 }
 
+// покомпонентный доступ
 void test_digit_get() {
     assert(num_digit_get(num_new(0), 0) == 0);
     assert(num_digit_get(num_new(1), 0) == 1);
@@ -125,16 +136,20 @@ void test_digit_get() {
     assert(num_digit_get(num_new(23456), 4) == 2);
 }
 
+// покомпонентная модификация
 void test_digit_set() {
-    assert(num_eq(num_digit_set(num_new(0), 0, 7), num_new(7)));
-    assert(num_eq(num_digit_set(num_new(10), 1, 8), num_new(80)));
-    assert(num_eq(num_digit_set(num_new(12345), 2, 7), num_new(12745)));
+    assert(num_cmp(num_digit_set(num_new(0), 0, 7), num_new(7)));
+    assert(num_cmp(num_digit_set(num_new(10), 1, 8), num_new(80)));
+    assert(num_cmp(num_digit_set(num_new(12345), 2, 7), num_new(12745)));
+
+
+    num_digit_set(num_new(1), 3, 5); // ожидание: assert или ошибка
 }
 
 int main() {
     test_init();
     test_print();
-    // test_cmp();
+    test_cmp();
 
     // test_add();
     // test_digit_get();

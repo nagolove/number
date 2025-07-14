@@ -2,8 +2,6 @@
 Библиотека длинной арифметики. 
 Число хранится в 100ричной системе счисления.
 для удобного извлечения десятичной цифры.
-
-TODO: Умножение Карацубы
  */
 
 #pragma once
@@ -15,13 +13,19 @@ TODO: Умножение Карацубы
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #define NUMBER_MAX 256
 
 typedef struct Number {
     // 100ричная система для быстрого сдвига и извлечения числа
+    // Используется little-endian
+    // nums[0] — младший стоичный разряд (least significant)
+    // nums[len - 1] — старший стоичный разряд
     uint8_t     nums[NUMBER_MAX]; 
     size_t      nums_num;
+    bool        nan, 
+                neg;
 } Number;
 
 /*
@@ -29,9 +33,19 @@ typedef struct NumberRat {
     // NumberRat = p / q
     Number  p, q;
     // наличие ошибки округления
-    bool    exact;
+    bool    noexact;
 } NumberRat;
+
+typedef struct NumberC {
+    NumberRat i, r;
+    // наличие ошибки округления
+    bool      noexact;
+} NumberC;
 */
+
+static inline bool num_is_nun(Number n) {
+    return n.nan;
+}
 
 static inline Number num_new(uint64_t x) {
     Number n = {};
@@ -68,120 +82,146 @@ static inline Number num_new_str(const char *s) {
 }
 
 // создание числа из сырых данных.
-// XXX: Какова максимальная длина len?
-// XXX: Где находится старший и младший разряд?
 static inline Number num_new_raw(const uint8_t *data, size_t len) {
     Number n = {};
+    if (!data || len > NUMBER_MAX) {
+        n.nan = true;
+        return n;
+    }
+
+    // допустим, data[0] — младший разряд
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] >= 100) {
+            n.nan = true;
+            return n;
+        }
+        n.nums[i] = data[i];
+    }
+    n.nums_num = len;
     return n;
+
 }
 
 // распечатать число в буфер buf, максимальное количество символов - maxchars
-// XXX: Каково максимальное количество символов для NUMBER_MAX?
+// INFO: максимальное количество символов для NUMBER_MAX - maxchars = 2 * NUMBER_MAX + 1
 size_t num_prints(Number n, char *buf, size_t maxchars) {
-    printf("num_prints: n.nums_num %zu, maxchars %zu\n", n.nums_num, maxchars);
-
-    // писать символы справа на лево
-    assert(buf);
-
-    char tmp[maxchars], *ptmp = tmp;
-    memset(tmp, 0, sizeof(tmp));
-    size_t written = 0;
-
-    if (!maxchars)
+    if (!buf || maxchars == 0)
         return 0;
-        
-    printf("n.nums[0] = %d\n", (int)n.nums[0]);
 
-    // printf("num_prints: n.num_num %zu\n", n.nums_num);
-    if (!n.nums_num || (n.nums_num == 1 && n.nums[0] == 0)) {
-        printf("zero\n");
-        *buf++ = '0';
-        *buf = 0;
+    if (n.nan) {
+        snprintf(buf, maxchars, "nan");
+        return 3;
+    }
+
+    if (n.nums_num == 0 || (n.nums_num == 1 && n.nums[0] == 0)) {
+        buf[0] = '0';
+        buf[1] = '\0';
         return 1;
     }
 
+    char tmp[NUMBER_MAX * 2 + 1];
+    size_t tmp_len = 0;
+
     for (int i = n.nums_num - 1; i >= 0; i--) {
-        // printf("n.nums[%d] = %d\n", i, n.nums[i]);
+        uint8_t val = n.nums[i];
+        int hi = val / 10;
+        int lo = val % 10;
 
-        int hi = n.nums[i] / 10, lo = n.nums[i] % 10;
-
-        // printf("hi %d, lo %d\n", hi, lo);
-
-        // if (hi)
-            *ptmp++ = hi + '0', written++;
-
-        if (written >= maxchars) {
-            // printf("written >= maxchars 1\n");
-            return written;
+        if (i == (int)(n.nums_num - 1)) {
+            // Первая (старшая) ячейка: может быть одно- или двухзначной
+            if (hi > 0) tmp[tmp_len++] = '0' + hi;
+        } else {
+            tmp[tmp_len++] = '0' + hi;
         }
 
-        *ptmp++ = lo + '0', written++;
-
-        if (written >= maxchars) {
-            // printf("written >= maxchars 2\n");
-            return written;
-        }
+        tmp[tmp_len++] = '0' + lo;
     }
 
-    ptmp = tmp;
+    // Снимаем ведущие нули
+    size_t i = 0;
+    while (i < tmp_len && tmp[i] == '0') i++;
 
-    // printf("num_prints: tmp '%s'\n", tmp);
-    // /*
-    while (*ptmp + 1) {
-        if (*ptmp == '0') {
-            // ptmp--;
-            // break;
-            ptmp++;
-        } else 
-            break;        
+    if (i == tmp_len) {
+        strcpy(buf, "0");
+        return 1;
     }
-    // */
-    // printf("num_prints: ptmp '%s'\n", ptmp);
 
-    //memmove();
-    strcpy(buf, ptmp);
+    size_t len = tmp_len - i;
+    len = (len < maxchars - 1) ? len : maxchars - 1;
 
-    printf("num_prints: buf after removing leading zeros '%s'\n", buf);
-    return written;
+    memcpy(buf, tmp + i, len);
+    buf[len] = '\0';
+    return len;
 }
 
 char *num_sprint(Number n) {
-    // TODO: Добавить слоты
-    static char buf[NUMBER_MAX];
-    num_prints(n, buf, NUMBER_MAX);
-    return buf;
+    static char pool[4][NUMBER_MAX * 2 + 1];
+    static int index = 0;
+    index = (index + 1) % 4;
+    num_prints(n, pool[index], sizeof(pool[index]));
+    return pool[index];
 }
 
 static inline Number num_add(Number a, Number b) {
-    Number n = {};
+    if (a.nan || b.nan)
+        return (Number){ .nan = true };
+
+    Number result = {};
+    size_t maxlen = a.nums_num > b.nums_num ? a.nums_num : b.nums_num;
+
+    int carry = 0;
+    for (size_t i = 0; i < maxlen || carry; i++) {
+        int av = i < a.nums_num ? a.nums[i] : 0;
+        int bv = i < b.nums_num ? b.nums[i] : 0;
+
+        int sum = av + bv + carry;
+        if (i >= NUMBER_MAX) return (Number){ .nan = true };
+        result.nums[i] = sum % 100;
+        carry = sum / 100;
+    }
+    result.nums_num = maxlen + (carry != 0);
+    if (carry)
+        result.nums[maxlen] = carry;
+
+    return result;
+}
+
+Number num_trim_leading_zeros(Number n) {
+    if (n.nan)
+        return n;
+
     return n;
 }
 
 // 235424352_3_1234237987
 // Возвращает -1 если num ошибочен
 int num_digit_get(Number n, int num) {
-    printf("num_digit_get: num %d\n", num);
+    if (n.nan)
+        return -1;
+
     if (num >= n.nums_num) {
-        printf("num >= n.nums_num\n");
         return -1;
     }
-    int digit = n.nums[num / 2];
-    // return digit % 2 ? digit % 10 : digit / 10;
-    
-    if (digit % 2 == 0) {
-        // lo
-        return digit / 10;
-    } else 
-        // lo
-        return digit % 10;
+
+    int byte_index = num / 2;
+    if ((size_t)byte_index >= n.nums_num)
+        return -1;
+
+    uint8_t byte = n.nums[byte_index];
+    return (num % 2 == 0) ? (byte % 10) : (byte / 10);
 }
 
-// XXX: Как сделать обработку если цифра num выходит за границы цисла?
 static inline Number num_digit_set(Number n, int num, int digit) {
     assert(digit >= 0);
     assert(digit <= 10);
+    assert(num >= 0);
+    assert(num < NUMBER_MAX);
+
     if (num >= n.nums_num) {
+        n.nan = true;
+        return n;
     }
+
     uint8_t *_digit = &n.nums[num / 2];
     if (num % 2) {
         // lo
@@ -196,9 +236,15 @@ static inline Number num_digit_set(Number n, int num, int digit) {
 // a > b    => 1
 // a == b   => 0
 // a < b    => -1
+// Если одно или оба числа - nan, то возвращается INT_MIN
 int num_cmp(Number a, Number b) {
-    int maxlen = a.nums_num > b.nums_num ? a.nums_num : a.nums_num;
-    for (int i = maxlen - 1; i > 0; i--) {
+
+    if (a.nan || b.nan) {
+        return INT_MIN;
+    }
+
+    int maxlen = a.nums_num > b.nums_num ? a.nums_num : b.nums_num;
+    for (int i = maxlen - 1; i >= 0; i--) {
         if (a.nums[i] > b.nums[i])
             return 1;
         else if (a.nums[i] <= b.nums[i])
