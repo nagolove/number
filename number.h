@@ -1,3 +1,5 @@
+/* vim: fdm=marker */
+
 /*
 Библиотека длинной арифметики. 
 Число хранится в 100ричной системе счисления.
@@ -43,6 +45,17 @@ typedef struct NumberC {
 } NumberC;
 */
 
+static inline void num_normalize_zero(Number *n) {
+    if (!n || n->nan)
+        return;
+
+    if (n->nums_num == 0 || (n->nums_num == 1 && n->nums[0] == 0)) {
+        n->nums_num = 1;
+        n->nums[0] = 0;
+        n->neg = false; // часто ноль считается неотрицательным
+    }
+}
+
 static inline bool num_is_nun(Number n) {
     return n.nan;
 }
@@ -58,26 +71,50 @@ static inline Number num_new(uint64_t x) {
     return n;
 }
 
-// только числа >= 0, знак нуля не поддеживается
+// TODO: Описать поведение
 static inline Number num_new_str(const char *s) {
     assert(s);
     Number n = {};
-    const char *last = s;
 
-    while (*last) {
-        assert(isdigit(*last));
-        last++;
+    // Пропуск начальных пробелов
+    while (isspace(*s)) s++;
+
+    // Проверка на минус
+    if (*s == '-') {
+        n.neg = true;
+        s++;
     }
 
-    last -= 1;
-    
-    while (last + 1 != s) {
-        // printf("*last '%c'\n", *last);
-        n.nums[n.nums_num++] = *last - '0';
-        assert(n.nums_num < NUMBER_MAX);
-        last--;
+    // Пропуск пробелов после минуса
+    while (isspace(*s)) s++;
+
+    // Теперь должны быть только цифры
+    const char *digits = s;
+    size_t len = 0;
+    while (*s) {
+        if (!isdigit(*s)) {
+            n.nan = true;
+            return n;
+        }
+        len++;
+        s++;
     }
 
+    if (len == 0 || len > NUMBER_MAX * 2) {
+        n.nan = true;
+        return n;
+    }
+
+    // Конвертация стоичных пар
+    for (int i = (int)len - 1; i >= 0; i -= 2) {
+        int lo = digits[i] - '0';
+        int hi = (i > 0) ? digits[i - 1] - '0' : 0;
+        int val = hi * 10 + lo;
+        assert(val < 100);
+        n.nums[n.nums_num++] = (uint8_t)val;
+    }
+
+    num_normalize_zero(&n);
     return n;
 }
 
@@ -98,13 +135,14 @@ static inline Number num_new_raw(const uint8_t *data, size_t len) {
         n.nums[i] = data[i];
     }
     n.nums_num = len;
-    return n;
 
+    num_normalize_zero(&n);
+    return n;
 }
 
 // распечатать число в буфер buf, максимальное количество символов - maxchars
 // INFO: максимальное количество символов для NUMBER_MAX - maxchars = 2 * NUMBER_MAX + 1
-size_t num_prints(Number n, char *buf, size_t maxchars) {
+static inline size_t num_prints(Number n, char *buf, size_t maxchars) {
     if (!buf || maxchars == 0)
         return 0;
 
@@ -142,7 +180,7 @@ size_t num_prints(Number n, char *buf, size_t maxchars) {
     while (i < tmp_len && tmp[i] == '0') i++;
 
     if (i == tmp_len) {
-        strcpy(buf, "0");
+        strncpy(buf, "0", maxchars);
         return 1;
     }
 
@@ -154,7 +192,7 @@ size_t num_prints(Number n, char *buf, size_t maxchars) {
     return len;
 }
 
-char *num_sprint(Number n) {
+static inline char *num_sprint(Number n) {
     static char pool[4][NUMBER_MAX * 2 + 1];
     static int index = 0;
     index = (index + 1) % 4;
@@ -162,9 +200,27 @@ char *num_sprint(Number n) {
     return pool[index];
 }
 
+static inline char *num_to_str(Number n) {
+    return num_sprint(n);
+}
+
+static inline Number num_sub(Number a, Number b) {
+    if (a.nan || b.nan)
+        return (Number){ .nan = true };
+
+    num_normalize_zero(&a);
+    num_normalize_zero(&b);
+
+    Number result = {};
+    return result;
+}
+
 static inline Number num_add(Number a, Number b) {
     if (a.nan || b.nan)
         return (Number){ .nan = true };
+
+    num_normalize_zero(&a);
+    num_normalize_zero(&b);
 
     Number result = {};
     size_t maxlen = a.nums_num > b.nums_num ? a.nums_num : b.nums_num;
@@ -186,7 +242,7 @@ static inline Number num_add(Number a, Number b) {
     return result;
 }
 
-Number num_trim_leading_zeros(Number n) {
+static inline Number num_trim_leading_zeros(Number n) {
     if (n.nan)
         return n;
 
@@ -195,7 +251,7 @@ Number num_trim_leading_zeros(Number n) {
 
 // 235424352_3_1234237987
 // Возвращает -1 если num ошибочен
-int num_digit_get(Number n, int num) {
+static inline int num_digit_get(Number n, int num) {
     if (n.nan)
         return -1;
 
@@ -237,23 +293,33 @@ static inline Number num_digit_set(Number n, int num, int digit) {
 // a == b   => 0
 // a < b    => -1
 // Если одно или оба числа - nan, то возвращается INT_MIN
-int num_cmp(Number a, Number b) {
-
+static inline int num_cmp(Number a, Number b) {
     if (a.nan || b.nan) {
         return INT_MIN;
     }
 
-    int maxlen = a.nums_num > b.nums_num ? a.nums_num : b.nums_num;
-    for (int i = maxlen - 1; i >= 0; i--) {
-        if (a.nums[i] > b.nums[i])
+    num_normalize_zero(&a);
+    num_normalize_zero(&b);
+
+    printf("num_cmp: a '%s', b '%s'\n", num_sprint(a), num_sprint(b));
+
+    size_t maxlen = (a.nums_num > b.nums_num) ? a.nums_num : b.nums_num;
+
+    for (int i = (int)maxlen - 1; i >= 0; i--) {
+        uint8_t digit_a = (i < (int)a.nums_num) ? a.nums[i] : 0;
+        uint8_t digit_b = (i < (int)b.nums_num) ? b.nums[i] : 0;
+
+        if (digit_a > digit_b)
             return 1;
-        else if (a.nums[i] <= b.nums[i])
+        if (digit_a < digit_b)
             return -1;
     }
+
     return 0;
 }
 
-bool num_eq(Number a, Number b) {
+
+static inline bool num_eq(Number a, Number b) {
     return !num_cmp(a, b);
 }
 
@@ -271,4 +337,8 @@ static inline Number num_mul(Number a, Number b) {
     else
         return num_mul_karatsuba(a, b);
     //return (Number){};
+}
+
+static inline Number num_div(Number a, Number b) {
+    return (Number){};
 }
