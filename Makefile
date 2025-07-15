@@ -1,7 +1,7 @@
 # Makefile для number-test
 
 CC = gcc
-CFLAGS = -Wall -std=c2x
+CFLAGS = -Wall -std=c2x -g3
 LDFLAGS = -lm
 TARGET = number-test.exe
 SRC = number-test.c
@@ -11,7 +11,7 @@ SRC = number-test.c
 all: $(TARGET)
 
 $(TARGET): $(SRC)
-	$(CC) -o $(TARGET) $(SRC) $(CFLAGS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 run: all
 	reset && ./$(TARGET)
