@@ -1,4 +1,4 @@
-/* vim: fdm=marker */
+// vim: fdm=marker
 
 /*
 Библиотека длинной арифметики. 
@@ -44,6 +44,28 @@ typedef struct NumberC {
     bool      noexact;
 } NumberC;
 */
+
+// {{{ API
+static inline void num_normalize_zero(Number *n);
+static inline bool num_is_nun(Number n);
+static inline Number num_new(uint64_t x);
+static inline Number num_new_str(const char *s);
+static inline Number num_new_raw(const uint8_t *data, size_t len);
+static inline size_t num_prints(Number n, char *buf, size_t maxchars);
+static inline char *num_sprint(Number n);
+static inline char *num_to_str(Number n);
+static inline Number num_sub(Number a, Number b);
+static inline Number num_add(Number a, Number b);
+static inline Number num_trim_leading_zeros(Number n);
+static inline int num_digit_get(Number n, int num);
+static inline Number num_digit_set(Number n, int num, int digit);
+static inline int num_cmp(Number a, Number b);
+static inline bool num_eq(Number a, Number b);
+static inline Number num_mul_simple(Number a, Number b);
+static inline Number num_mul_karatsuba(Number a, Number b);
+static inline Number num_mul(Number a, Number b);
+static inline Number num_div(Number a, Number b);
+// }}} API
 
 static inline void num_normalize_zero(Number *n) {
     if (!n || n->nan)
@@ -211,7 +233,50 @@ static inline Number num_sub(Number a, Number b) {
     num_normalize_zero(&a);
     num_normalize_zero(&b);
 
+    int cmp = num_cmp(a, b);
+    if (cmp == 0) {
+        Number result = {};
+        result.nums[0] = 0;
+        result.nums_num = 1;
+        return result;
+    }
+
+    // Всегда вычитаем меньшее из большего
+    Number *big = &a, *small = &b;
+    bool neg = false;
+    if (cmp < 0) {
+        big = &b;
+        small = &a;
+        neg = true;
+    }
+
     Number result = {};
+    int borrow = 0;
+    size_t len = big->nums_num;
+
+    for (size_t i = 0; i < len; i++) {
+        int av = big->nums[i];
+        int bv =
+            (i < small->nums_num) ? small->nums[i] : 0;
+        int diff = av - bv - borrow;
+        if (diff < 0) {
+            diff += 100;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        result.nums[i] = (uint8_t)diff;
+    }
+
+    result.nums_num = len;
+    result.neg = neg;
+
+    // Убираем ведущие нули
+    while (result.nums_num > 1
+        && result.nums[result.nums_num - 1] == 0)
+        result.nums_num--;
+
+    num_normalize_zero(&result);
     return result;
 }
 
@@ -301,7 +366,7 @@ static inline int num_cmp(Number a, Number b) {
     num_normalize_zero(&a);
     num_normalize_zero(&b);
 
-    printf("num_cmp: a '%s', b '%s'\n", num_sprint(a), num_sprint(b));
+    //printf("num_cmp: a '%s', b '%s'\n", num_sprint(a), num_sprint(b));
 
     size_t maxlen = (a.nums_num > b.nums_num) ? a.nums_num : b.nums_num;
 
@@ -324,7 +389,53 @@ static inline bool num_eq(Number a, Number b) {
 }
 
 static inline Number num_mul_simple(Number a, Number b) {
-    return (Number){};
+    if (a.nan || b.nan)
+        return (Number){ .nan = true };
+
+    num_normalize_zero(&a);
+    num_normalize_zero(&b);
+
+    // Проверка на ноль
+    if ((a.nums_num == 1 && a.nums[0] == 0)
+        || (b.nums_num == 1 && b.nums[0] == 0)) {
+        Number result = {};
+        result.nums[0] = 0;
+        result.nums_num = 1;
+        return result;
+    }
+
+    size_t max_len = a.nums_num + b.nums_num;
+    if (max_len > NUMBER_MAX)
+        return (Number){ .nan = true };
+
+    // Накопление произведений в uint32_t
+    uint32_t temp[NUMBER_MAX] = {};
+    for (size_t i = 0; i < a.nums_num; i++) {
+        for (size_t j = 0; j < b.nums_num; j++) {
+            temp[i + j] +=
+                (uint32_t)a.nums[i] * b.nums[j];
+        }
+    }
+
+    // Пропагация переносов
+    Number result = {};
+    uint32_t carry = 0;
+    for (size_t i = 0; i < max_len; i++) {
+        uint32_t val = temp[i] + carry;
+        result.nums[i] = val % 100;
+        carry = val / 100;
+    }
+
+    result.nums_num = max_len;
+    result.neg = a.neg ^ b.neg;
+
+    // Убираем ведущие нули
+    while (result.nums_num > 1
+        && result.nums[result.nums_num - 1] == 0)
+        result.nums_num--;
+
+    num_normalize_zero(&result);
+    return result;
 }
 
 static inline Number num_mul_karatsuba(Number a, Number b) {
