@@ -130,7 +130,6 @@ void test_digit_set() {
     assert(num_cmp(num_digit_set(num_new(10), 1, 8), num_new(80)));
     assert(num_cmp(num_digit_set(num_new(12345), 2, 7), num_new(12745)));
 
-
     num_digit_set(num_new(1), 3, 5); // ожидание: assert или ошибка
 }
 
@@ -280,6 +279,60 @@ bool on_read_tok(const char *tok, void *ctx) {
     return false;
 }
 
+// проверка num_to_str() — обёртка над num_sprint()
+void test_to_str() {
+    check_str(num_to_str(num_new(0)), "0");
+    check_str(num_to_str(num_new(12345)), "12345");
+    check_str(num_to_str(num_new_str("9999999")), "9999999");
+
+    // проверка что пул из 4 буферов не затирает предыдущие
+    char *s1 = num_to_str(num_new(111));
+    char *s2 = num_to_str(num_new(222));
+    char *s3 = num_to_str(num_new(333));
+    char *s4 = num_to_str(num_new(444));
+    check_str(s1, "111");
+    check_str(s2, "222");
+    check_str(s3, "333");
+}
+
+// проверка num_is_nun() — детекция NaN
+void test_is_nun() {
+    assert(!num_is_nun(num_new(0)));
+    assert(!num_is_nun(num_new(42)));
+    assert(!num_is_nun(num_new_str("123456789")));
+
+    Number nan = { .nan = true };
+    assert(num_is_nun(nan));
+
+    // операции с NaN возвращают NaN
+    assert(num_is_nun(num_add(nan, num_new(1))));
+    assert(num_is_nun(num_sub(num_new(5), nan)));
+    assert(num_is_nun(num_mul(nan, nan)));
+}
+
+// проверка num_trim_leading_zeros()
+void test_trim_leading_zeros() {
+    Number a = num_new(123);
+    Number ta = num_trim_leading_zeros(a);
+    assert(num_eq(ta, num_new(123)));
+
+    // ноль остаётся нулём
+    Number z = num_new(0);
+    Number tz = num_trim_leading_zeros(z);
+    assert(num_eq(tz, num_new(0)));
+
+    // искусственно добавляем ведущие нули
+    Number b = num_new(42);
+    b.nums[b.nums_num++] = 0;
+    b.nums[b.nums_num++] = 0;
+    Number tb = num_trim_leading_zeros(b);
+    assert(num_eq(tb, num_new(42)));
+
+    // NaN проходит без изменений
+    Number nan = { .nan = true };
+    assert(num_is_nun(num_trim_leading_zeros(nan)));
+}
+
 void test_by_generated_data() {
     TestExpr expr = {};
     parse_file("number_test_data.txt", on_read_tok, on_read_newline, &expr);
@@ -289,11 +342,14 @@ int main() {
     test_init();
     test_print();
     test_cmp();
+    test_to_str();
+    test_is_nun();
+    test_trim_leading_zeros();
     test_by_generated_data();
 
-    // test_add();
-    // test_digit_get();
-    // test_digit_set();
+    test_add();
+    test_digit_get();
+    test_digit_set();
 
     // num_new(0);
     // num_new(1234);

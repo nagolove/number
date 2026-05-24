@@ -233,6 +233,29 @@ static inline Number num_sub(Number a, Number b) {
     num_normalize_zero(&a);
     num_normalize_zero(&b);
 
+    // a - (-b) = a + b
+    if (!a.neg && b.neg) {
+        b.neg = false;
+        return num_add(a, b);
+    }
+
+    // (-a) - b = -(a + b)
+    if (a.neg && !b.neg) {
+        a.neg = false;
+        Number r = num_add(a, b);
+        r.neg = true;
+        num_normalize_zero(&r);
+        return r;
+    }
+
+    // (-a) - (-b) = b - a (оба без знака)
+    if (a.neg && b.neg) {
+        a.neg = false;
+        b.neg = false;
+        return num_sub(b, a);
+    }
+
+    // оба положительные — вычитание по модулю
     int cmp = num_cmp(a, b);
     if (cmp == 0) {
         Number result = {};
@@ -241,7 +264,6 @@ static inline Number num_sub(Number a, Number b) {
         return result;
     }
 
-    // Всегда вычитаем меньшее из большего
     Number *big = &a, *small = &b;
     bool neg = false;
     if (cmp < 0) {
@@ -287,8 +309,32 @@ static inline Number num_add(Number a, Number b) {
     num_normalize_zero(&a);
     num_normalize_zero(&b);
 
+    // (-a) + (-b) = -(a + b)
+    if (a.neg && b.neg) {
+        a.neg = false;
+        b.neg = false;
+        Number r = num_add(a, b);
+        r.neg = true;
+        num_normalize_zero(&r);
+        return r;
+    }
+
+    // a + (-b) = a - b
+    if (!a.neg && b.neg) {
+        b.neg = false;
+        return num_sub(a, b);
+    }
+
+    // (-a) + b = b - a
+    if (a.neg && !b.neg) {
+        a.neg = false;
+        return num_sub(b, a);
+    }
+
+    // оба положительные — обычное сложение
     Number result = {};
-    size_t maxlen = a.nums_num > b.nums_num ? a.nums_num : b.nums_num;
+    size_t maxlen =
+        a.nums_num > b.nums_num ? a.nums_num : b.nums_num;
 
     int carry = 0;
     for (size_t i = 0; i < maxlen || carry; i++) {
@@ -310,6 +356,9 @@ static inline Number num_add(Number a, Number b) {
 static inline Number num_trim_leading_zeros(Number n) {
     if (n.nan)
         return n;
+
+    while (n.nums_num > 1 && n.nums[n.nums_num - 1] == 0)
+        n.nums_num--;
 
     return n;
 }
@@ -438,8 +487,82 @@ static inline Number num_mul_simple(Number a, Number b) {
     return result;
 }
 
+// вспомогательная: срез nums[from..from+len-1]
+static inline Number num_slice(Number n, size_t from, size_t len) {
+    Number r = {};
+    if (from >= n.nums_num || len == 0) {
+        r.nums[0] = 0;
+        r.nums_num = 1;
+        return r;
+    }
+    if (from + len > n.nums_num)
+        len = n.nums_num - from;
+    memcpy(r.nums, n.nums + from, len);
+    r.nums_num = len;
+    // убрать ведущие нули
+    while (r.nums_num > 1 && r.nums[r.nums_num - 1] == 0)
+        r.nums_num--;
+    return r;
+}
+
+// вспомогательная: сдвиг на m разрядов (умножение на 100^m)
+static inline Number num_shift(Number n, size_t m) {
+    if (n.nums_num == 1 && n.nums[0] == 0)
+        return n;
+    if (n.nums_num + m > NUMBER_MAX)
+        return (Number){ .nan = true };
+    Number r = {};
+    memset(r.nums, 0, m);
+    memcpy(r.nums + m, n.nums, n.nums_num);
+    r.nums_num = n.nums_num + m;
+    r.neg = n.neg;
+    return r;
+}
+
 static inline Number num_mul_karatsuba(Number a, Number b) {
-    return (Number){};
+    if (a.nan || b.nan)
+        return (Number){ .nan = true };
+
+    num_normalize_zero(&a);
+    num_normalize_zero(&b);
+
+    // базовый случай — делегируем простому умножению
+    if (a.nums_num < 32 || b.nums_num < 32)
+        return num_mul_simple(a, b);
+
+    // запоминаем знак, работаем с модулями
+    bool result_neg = a.neg ^ b.neg;
+    a.neg = false;
+    b.neg = false;
+
+    size_t n = a.nums_num > b.nums_num
+        ? a.nums_num : b.nums_num;
+    size_t m = n / 2;
+
+    Number a_lo = num_slice(a, 0, m);
+    Number a_hi = num_slice(a, m, a.nums_num - m);
+    Number b_lo = num_slice(b, 0, m);
+    Number b_hi = num_slice(b, m, b.nums_num - m);
+
+    Number z0 = num_mul(a_lo, b_lo);
+    Number z2 = num_mul(a_hi, b_hi);
+
+    // z1 = (a_lo + a_hi) * (b_lo + b_hi) - z0 - z2
+    Number z1 = num_sub(
+        num_sub(
+            num_mul(num_add(a_lo, a_hi), num_add(b_lo, b_hi)),
+            z0),
+        z2);
+
+    // result = z2 * B^(2m) + z1 * B^m + z0
+    Number result = num_add(
+        num_add(num_shift(z2, 2 * m), num_shift(z1, m)),
+        z0
+    );
+
+    result.neg = result_neg;
+    num_normalize_zero(&result);
+    return result;
 }
 
 static inline Number num_mul(Number a, Number b) {
